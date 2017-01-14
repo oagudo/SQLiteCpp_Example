@@ -20,7 +20,7 @@
 #include <SQLiteCpp/SQLiteCpp.h>
 
 namespace {
-    const static unsigned int numberRows(500000);
+    const static unsigned int numberRows(100000);
     const static unsigned int numberColumns(68);
     static std::vector<std::string> values;
 

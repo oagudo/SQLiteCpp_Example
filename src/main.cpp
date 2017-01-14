@@ -20,7 +20,7 @@
 #include <SQLiteCpp/SQLiteCpp.h>
 
 namespace {
-    const static unsigned int numberRows(100000);
+    const static unsigned int numberRows(500000);
     const static unsigned int numberColumns(68);
     static std::vector<std::string> values;
 
@@ -110,13 +110,13 @@ int main () {
         // Performance test for in memory SQLite database
         //
         SQLite::Database db(":memory:", SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
-	    db.exec(CreateTableQuery());
+        db.exec(CreateTableQuery());
 
         {
             const std::string insertQuery = CreateInsertQuery();
             ElapsedTime t("Insertion");
-	        for (unsigned int i = 0; i < numberRows; i++)
-	            db.exec(insertQuery);
+            for (unsigned int i = 0; i < numberRows; i++)
+                db.exec(insertQuery);
             db.exec(fixedInsertQuery);
         }
 
@@ -128,7 +128,7 @@ int main () {
             }
         }
 
-	    db.exec("DROP TABLE test");
+        db.exec("DROP TABLE test");
     }
     catch (std::exception& e)
     {

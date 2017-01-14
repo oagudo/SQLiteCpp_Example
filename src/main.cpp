@@ -1,9 +1,8 @@
 /**
  * @file  main.cpp
- * @brief A few short examples in a row.
+ * @brief Performance of in memory database using SQLite++ wrapper
  *
- *  Demonstrates how-to use the SQLite++ wrapper
- *
+ *  
  * Copyright (c) 2012-2016 Sebastien Rombauts (sebastien.rombauts@gmail.com)
  *
  * Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
@@ -13,9 +12,33 @@
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <ctime>
+#include <random>
+#include <vector>
 
 #include <SQLiteCpp/SQLiteCpp.h>
 
+namespace {
+    const static unsigned int numberRows(100000);
+    const static unsigned int numberColumns(68);
+    static std::vector<std::string> values;
+
+    struct ElapsedTime {
+        ElapsedTime(const std::string &taskDescription) : _taskDescription(taskDescription), _begin(clock()) {
+            std::cout << _taskDescription << " - BEGIN" << std::endl;
+        }
+        ~ElapsedTime() {
+            std::clock_t end = clock();
+            const double elapsedSecs = double(end - _begin) / CLOCKS_PER_SEC;
+            std::cout << _taskDescription << " - END ";
+            std::cout << "Elapsed seconds: " << elapsedSecs << std::endl;
+        }
+        std::string _taskDescription;
+        std::clock_t _begin;
+    };
+
+}
 
 #ifdef SQLITECPP_ENABLE_ASSERT_HANDLER
 namespace SQLite
@@ -30,53 +53,88 @@ void assertion_failed(const char* apFile, const long apLine, const char* apFunc,
 }
 #endif
 
-int main ()
-{
-    // Using SQLITE_VERSION would require #include <sqlite3.h> which we want to avoid: use SQLite::VERSION if possible.
-//  std::cout << "SQlite3 version " << SQLITE_VERSION << std::endl;
+std::string GetRandomValue() {
+    std::mt19937 rng;
+    rng.seed(std::random_device()());
+    std::uniform_int_distribution<std::mt19937::result_type> dist(0,values.size() - 1);
+    const int index = dist(rng);
+    return values[index];
+}
+
+std::string CreateTableQuery() {
+    std::string query = "CREATE TABLE test (id INTEGER PRIMARY KEY, ";
+    for (unsigned int i = 0; i < numberColumns; i++) {
+        query += "value_" + std::to_string(i) + " TEXT";
+        const bool isLastColumn = (i == numberColumns - 1);
+        if (not isLastColumn) query += ", ";
+    }
+    return query + ")";
+}
+
+std::string CreateInsertQuery() {
+    std::string query = "INSERT INTO test VALUES (NULL, ";
+    for (unsigned int i = 0; i < numberColumns; i++) {
+        query += "\"" + GetRandomValue() + "\"";
+        const bool isLastColumn = (i == numberColumns - 1);
+        if (not isLastColumn) query += ", ";
+    }
+    return query + ")";
+}
+
+std::string CreateSelectQuery() {
+    std::string query = "SELECT * FROM test WHERE ";
+    for (unsigned int i = 0; i < numberColumns; i++) {
+        query += "value_" + std::to_string(i) + "=\"" + GetRandomValue() + "\"";
+        const bool isLastColumn = (i == numberColumns - 1);
+        if (not isLastColumn) query += " AND ";
+    }
+    return query;
+}
+
+int main () {
     std::cout << "SQlite3 version " << SQLite::VERSION << " (" << SQLite::getLibVersion() << ")" << std::endl;
     std::cout << "SQliteC++ version " << SQLITECPP_VERSION << std::endl;
 
+    values.push_back("val1");
+
+    // Just one value so at this point the select is deterministic
+    const std::string fixedInsertQuery = CreateInsertQuery();
+    const std::string fixedSelectQuery = CreateSelectQuery();
+
+    values.push_back("val2");
+    values.push_back("val3");
+
     ////////////////////////////////////////////////////////////////////////////
-    // Simple batch queries example :
     try
     {
-        // Open a database file in create/write mode
-        SQLite::Database    db("test.db3", SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
-        std::cout << "SQLite database file '" << db.getFilename().c_str() << "' opened successfully\n";
+        // Performance test for in memory SQLite database
+        //
+        SQLite::Database db(":memory:", SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
+	    db.exec(CreateTableQuery());
 
-        // Create a new table with an explicit "id" column aliasing the underlying rowid
-        db.exec("DROP TABLE IF EXISTS test");
-        db.exec("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)");
-
-        // first row
-        int nb = db.exec("INSERT INTO test VALUES (NULL, \"test\")");
-        std::cout << "INSERT INTO test VALUES (NULL, \"test\")\", returned " << nb << std::endl;
-
-        // second row
-        nb = db.exec("INSERT INTO test VALUES (NULL, \"second\")");
-        std::cout << "INSERT INTO test VALUES (NULL, \"second\")\", returned " << nb << std::endl;
-
-        // update the second row
-        nb = db.exec("UPDATE test SET value=\"second-updated\" WHERE id='2'");
-        std::cout << "UPDATE test SET value=\"second-updated\" WHERE id='2', returned " << nb << std::endl;
-
-        // Check the results : expect two row of result
-        SQLite::Statement   query(db, "SELECT * FROM test");
-        std::cout << "SELECT * FROM test :\n";
-        while (query.executeStep())
         {
-            std::cout << "row (" << query.getColumn(0) << ", \"" << query.getColumn(1) << "\")\n";
+            const std::string insertQuery = CreateInsertQuery();
+            ElapsedTime t("Insertion");
+	        for (unsigned int i = 0; i < numberRows; i++)
+	            db.exec(insertQuery);
+            db.exec(fixedInsertQuery);
         }
 
-        db.exec("DROP TABLE test");
+        {
+            ElapsedTime t("Select");
+            SQLite::Statement query(db, fixedSelectQuery);
+            while (query.executeStep()) {
+                std::cout << "row (" << query.getColumn(0) << ", \"" << query.getColumn(1) << "\")\n";
+            }
+        }
+
+	    db.exec("DROP TABLE test");
     }
     catch (std::exception& e)
     {
         std::cout << "SQLite exception: " << e.what() << std::endl;
         return EXIT_FAILURE; // unexpected error : exit the example program
     }
-    remove("test.db3");
 
     std::cout << "everything ok, quitting\n";
 
